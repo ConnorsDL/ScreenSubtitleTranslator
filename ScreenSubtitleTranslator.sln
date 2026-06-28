@@ -1,0 +1,48 @@
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScreenSubtitleTranslator", "src\ScreenSubtitleTranslator\ScreenSubtitleTranslator.csproj", "{7F7430A0-B74B-49AE-AB3D-CA3333B2F823}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScreenSubtitleTranslator.Tests", "tests\ScreenSubtitleTranslator.Tests\ScreenSubtitleTranslator.Tests.csproj", "{A8E186B4-5B6C-496A-8F41-7AE036914D82}"
+	ProjectSection(ProjectDependencies) = postProject
+		{7F7430A0-B74B-49AE-AB3D-CA3333B2F823} = {7F7430A0-B74B-49AE-AB3D-CA3333B2F823}
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{0A8C6D44-3D35-4AA4-9907-FB1D437119EE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AudioCaptureProbe", "tools\AudioCaptureProbe\AudioCaptureProbe.csproj", "{7BE3F187-3556-48B8-BF5B-E945A4AA3E04}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SpeechRecognitionProbe", "tools\SpeechRecognitionProbe\SpeechRecognitionProbe.csproj", "{84298CB9-B78E-4924-9E3A-09EE707F8FF2}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7F7430A0-B74B-49AE-AB3D-CA3333B2F823}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7F7430A0-B74B-49AE-AB3D-CA3333B2F823}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7F7430A0-B74B-49AE-AB3D-CA3333B2F823}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7F7430A0-B74B-49AE-AB3D-CA3333B2F823}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A8E186B4-5B6C-496A-8F41-7AE036914D82}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A8E186B4-5B6C-496A-8F41-7AE036914D82}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A8E186B4-5B6C-496A-8F41-7AE036914D82}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A8E186B4-5B6C-496A-8F41-7AE036914D82}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7BE3F187-3556-48B8-BF5B-E945A4AA3E04}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7BE3F187-3556-48B8-BF5B-E945A4AA3E04}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7BE3F187-3556-48B8-BF5B-E945A4AA3E04}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7BE3F187-3556-48B8-BF5B-E945A4AA3E04}.Release|Any CPU.Build.0 = Release|Any CPU
+		{84298CB9-B78E-4924-9E3A-09EE707F8FF2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{84298CB9-B78E-4924-9E3A-09EE707F8FF2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{84298CB9-B78E-4924-9E3A-09EE707F8FF2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{84298CB9-B78E-4924-9E3A-09EE707F8FF2}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{7BE3F187-3556-48B8-BF5B-E945A4AA3E04} = {0A8C6D44-3D35-4AA4-9907-FB1D437119EE}
+		{84298CB9-B78E-4924-9E3A-09EE707F8FF2} = {0A8C6D44-3D35-4AA4-9907-FB1D437119EE}
+	EndGlobalSection
+EndGlobal
