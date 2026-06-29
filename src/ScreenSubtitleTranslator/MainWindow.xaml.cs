@@ -11,6 +11,7 @@ namespace ScreenSubtitleTranslator;
 public partial class MainWindow : Window
 {
     private readonly WpfSubtitleOverlayController _overlayController;
+    private readonly WpfApiKeyConfigurationDialogService _apiKeyDialogService;
     private readonly MainWindowViewModel _viewModel;
     private bool _isClosing;
 
@@ -21,7 +22,16 @@ public partial class MainWindow : Window
         _overlayController = new WpfSubtitleOverlayController(Dispatcher);
         var pipeline = new SubtitlePipelineService(_overlayController);
         var settingsStore = new LocalUserSettingsStore();
-        _viewModel = new MainWindowViewModel(pipeline, settingsStore, Dispatcher);
+        var apiKeyManager = new OpenAIApiKeyManager(
+            new WindowsCredentialManagerApiKeyStore(),
+            new WindowsEnvironmentVariableAccessor());
+        _apiKeyDialogService = new WpfApiKeyConfigurationDialogService(apiKeyManager, () => this);
+        _viewModel = new MainWindowViewModel(
+            pipeline,
+            settingsStore,
+            apiKeyManager,
+            _apiKeyDialogService,
+            Dispatcher);
         DataContext = _viewModel;
         Loaded += OnLoaded;
     }
@@ -42,6 +52,7 @@ public partial class MainWindow : Window
         e.Cancel = true;
         _isClosing = true;
         await _viewModel.DisposeAsync();
+        _apiKeyDialogService.Dispose();
         _overlayController.Dispose();
         await Dispatcher.InvokeAsync(Close, DispatcherPriority.Background);
     }

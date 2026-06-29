@@ -17,6 +17,8 @@ public sealed class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     private readonly SubtitlePipelineService _pipeline;
     private readonly ISettingsStore _settingsStore;
+    private readonly IOpenAIApiKeyManager _apiKeyManager;
+    private readonly IApiKeyConfigurationDialogService _apiKeyDialogService;
     private readonly Dispatcher _dispatcher;
     private readonly Dictionary<string, PipelineModuleStatus> _moduleStatuses = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _diagnosticLogLock = new();
@@ -38,10 +40,14 @@ public sealed class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     public MainWindowViewModel(
         SubtitlePipelineService pipeline,
         ISettingsStore settingsStore,
+        IOpenAIApiKeyManager apiKeyManager,
+        IApiKeyConfigurationDialogService apiKeyDialogService,
         Dispatcher dispatcher)
     {
         _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
         _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _apiKeyManager = apiKeyManager ?? throw new ArgumentNullException(nameof(apiKeyManager));
+        _apiKeyDialogService = apiKeyDialogService ?? throw new ArgumentNullException(nameof(apiKeyDialogService));
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _diagnosticLogPath = GetEnvironmentVariable(DiagnosticLogPathEnvironmentVariable);
         _pipeline.StatusChanged += OnPipelineStatusChanged;
@@ -80,9 +86,11 @@ public sealed class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         StartCommand = new RelayCommand(async _ => await StartAsync(), _ => !IsRunning);
         StopCommand = new RelayCommand(async _ => await StopAsync(), _ => IsRunning);
         SaveSettingsCommand = new RelayCommand(async _ => await SaveSettingsFromCommandAsync());
-        RefreshApiKeyStatusCommand = new RelayCommand(_ => RefreshApiKeyStatus());
+        RefreshApiKeyStatusCommand = new RelayCommand(async _ => await RefreshApiKeyStatusAsync());
+        ConfigureApiKeyCommand = new RelayCommand(
+            async _ => await ConfigureApiKeyAsync(),
+            _ => !IsRunning);
 
-        RefreshApiKeyStatus();
         AddLog("Application initialized.");
     }
 
@@ -105,6 +113,8 @@ public sealed class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     public ICommand SaveSettingsCommand { get; }
 
     public ICommand RefreshApiKeyStatusCommand { get; }
+
+    public ICommand ConfigureApiKeyCommand { get; }
 
     public LanguageOption SourceLanguage
     {
@@ -195,8 +205,18 @@ public sealed class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     public bool IsApiKeyConfigured
     {
         get => _isApiKeyConfigured;
-        private set => SetProperty(ref _isApiKeyConfigured, value);
+        private set
+        {
+            if (SetProperty(ref _isApiKeyConfigured, value))
+            {
+                OnPropertyChanged(nameof(ApiKeyActionLabel));
+            }
+        }
     }
+
+    public string ApiKeyActionLabel => IsApiKeyConfigured
+        ? "Change API Key"
+        : "Configure API Key";
 
     public string CurrentCaptureDeviceName
     {
@@ -237,6 +257,21 @@ public sealed class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         {
             AddLog($"Settings load failed: {exception.Message}");
         }
+
+        try
+        {
+            var state = await RefreshApiKeyStatusAsync();
+            if (!state.HasKey)
+            {
+                AddLog("No OpenAI API key was found. Opening configuration.");
+                await _apiKeyDialogService.ShowAsync(CancellationToken.None);
+                await RefreshApiKeyStatusAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            SetError($"Could not check the OpenAI API key: {exception.Message}");
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -245,12 +280,28 @@ public sealed class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         await _pipeline.DisposeAsync();
     }
 
-    private async Task StartAsync()
+    public async Task StartAsync()
     {
-        RefreshApiKeyStatus();
-        if (!HasOpenAiApiKey())
+        OpenAIApiKeyState keyState;
+        try
         {
-            SetError("OPENAI_API_KEY 缺失。请先配置环境变量。");
+            keyState = await RefreshApiKeyStatusAsync();
+            if (!keyState.HasKey)
+            {
+                AddLog("Start blocked: no OpenAI API key is configured.");
+                await _apiKeyDialogService.ShowAsync(CancellationToken.None);
+                keyState = await RefreshApiKeyStatusAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            SetError($"Could not check the OpenAI API key: {exception.Message}");
+            return;
+        }
+
+        if (!keyState.HasKey)
+        {
+            SetError("An OpenAI API key is required. Use Configure API Key before starting.");
             return;
         }
 
@@ -349,7 +400,6 @@ public sealed class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         SelectTargetLanguage(settings.Translation.TargetLanguage);
         SelectSubtitleMode(settings.SubtitleDisplayMode);
         AudioChunkSeconds = (int)Math.Clamp(settings.SpeechRecognition.AudioChunkDuration.TotalSeconds, 2, 5);
-        RefreshApiKeyStatus();
     }
 
     private SubtitlePipelineOptions CreateOptions()
@@ -417,17 +467,30 @@ public sealed class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         });
     }
 
-    private void RefreshApiKeyStatus()
+    private async Task ConfigureApiKeyAsync()
     {
-        IsApiKeyConfigured = HasOpenAiApiKey();
-        ApiKeyStatus = IsApiKeyConfigured
-            ? "OPENAI_API_KEY 已配置"
-            : "OPENAI_API_KEY 缺失";
+        try
+        {
+            await _apiKeyDialogService.ShowAsync(CancellationToken.None);
+            await RefreshApiKeyStatusAsync();
+        }
+        catch (Exception exception)
+        {
+            SetError($"Could not configure the OpenAI API key: {exception.Message}");
+        }
     }
 
-    private static bool HasOpenAiApiKey()
+    private async Task<OpenAIApiKeyState> RefreshApiKeyStatusAsync()
     {
-        return !string.IsNullOrWhiteSpace(GetEnvironmentVariable("OPENAI_API_KEY"));
+        var state = await _apiKeyManager.GetStateAsync(CancellationToken.None);
+        IsApiKeyConfigured = state.HasKey;
+        ApiKeyStatus = state.Source switch
+        {
+            OpenAIApiKeySource.EnvironmentVariable => "API Key: Environment",
+            OpenAIApiKeySource.WindowsCredentialManager => "API Key: Secure storage",
+            _ => "API Key: Not configured"
+        };
+        return state;
     }
 
     private static string? GetEnvironmentVariable(string name)
@@ -607,6 +670,11 @@ public sealed class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         if (StopCommand is RelayCommand stopCommand)
         {
             stopCommand.RaiseCanExecuteChanged();
+        }
+
+        if (ConfigureApiKeyCommand is RelayCommand configureApiKeyCommand)
+        {
+            configureApiKeyCommand.RaiseCanExecuteChanged();
         }
     }
 }

@@ -14,7 +14,7 @@ Include a concise description, affected version, reproduction steps, expected im
 
 Never commit, upload, paste, or attach a real OpenAI API Key. This includes source files, `.env`, `settings.json`, logs, screenshots, GitHub Issues, pull requests, release archives, and test artifacts.
 
-The application reads `OPENAI_API_KEY` from the Windows environment. Only `.env.example` with a non-secret placeholder belongs in the repository. If a real key is exposed, revoke or rotate it immediately in the OpenAI platform and inspect account usage.
+The application first reads `OPENAI_API_KEY` from the Windows environment and can otherwise store a key for the current user in Windows Credential Manager. It never stores a key in `settings.json`. Only `.env.example` with a non-secret placeholder belongs in the repository. If a real key is exposed, revoke or rotate it immediately in the OpenAI platform and inspect account usage.
 
 ## Logs and Transcripts
 

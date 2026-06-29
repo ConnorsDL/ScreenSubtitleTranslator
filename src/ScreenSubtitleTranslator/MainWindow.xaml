@@ -142,6 +142,12 @@
                                 </TextBlock.Style>
                             </TextBlock>
                         </Border>
+
+                        <Button Margin="10,0,0,0"
+                                MinHeight="32"
+                                Padding="11,5"
+                                Content="{Binding ApiKeyActionLabel}"
+                                Command="{Binding ConfigureApiKeyCommand}" />
                     </StackPanel>
                     <TextBlock Text="{Binding StatusMessage}"
                                Margin="0,6,0,0"

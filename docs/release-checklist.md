@@ -1,6 +1,6 @@
 # v0.1.0 Release Checklist
 
-本清单用于生成 zip 之前的发布候选检查。当前阶段不制作安装器。
+本清单用于生成 v0.1.0 self-contained zip 和 Windows x64 安装器前的发布检查。
 
 ## 版本与默认设置
 
@@ -12,14 +12,16 @@
 
 ## 凭据与隐私
 
-- [x] 应用只从环境变量读取 `OPENAI_API_KEY`。
+- [x] 应用优先从环境变量读取 `OPENAI_API_KEY`，否则从 Windows Credential Manager 读取。
+- [x] 应用内保存、读取和清除 Key 不使用 `settings.json`。
 - [x] UI 不显示完整 API Key。
 - [x] `LocalUserSettingsStore` 的 DTO 不包含 API Key。
 - [x] 测试确认带有 API Key 的内存设置保存后，JSON 不包含 Key 或 `apiKey` 字段。
 - [x] 当前 `%APPDATA%\ScreenSubtitleTranslator\settings.json` 不包含 API Key 字段。
 - [x] 仓库未发现疑似 `sk-...` OpenAI Key 字面量。
 - [x] 诊断日志默认关闭；只有设置 `SCREEN_SUBTITLE_DIAGNOSTIC_LOG` 才会落盘。
-- [ ] 发布前再次检查 git diff、提交历史和 zip 内容中的凭据。
+- [x] 安装目录和安装器候选已扫描，未发现真实 Key 或疑似 `sk-...` 凭据。
+- [ ] 发布前再次检查 git diff、提交历史、zip 和安装器内容中的凭据。
 
 ## 构建与自动化测试
 
@@ -27,7 +29,7 @@
 - [x] Release 构建为 0 errors / 0 warnings。
 - [x] `dotnet test --no-restore` 全部通过。
 - [ ] 在干净 Windows 10 或 Windows 11 用户环境运行 Release 输出。
-- [ ] 使用仅安装 .NET 8 Desktop Runtime 的机器验证 framework-dependent 输出。
+- [x] win-x64 输出为 self-contained，不要求目标电脑预装 .NET Runtime。
 
 ## 手动功能检查
 
@@ -52,11 +54,17 @@
 - [ ] zip 中不得包含 `tests/`、`tools/`、源码、`.git/` 或 `.vs/`。
 - [ ] zip 中必须包含 `ScreenSubtitleTranslator.exe`、运行时配置、依赖 DLL、README 和 Release Notes。
 - [ ] 生成并记录 zip 的 SHA-256。
+- [x] Inno Setup 安装器包含开始菜单快捷方式、可选桌面快捷方式和卸载程序。
+- [x] 已从开始菜单和桌面快捷方式启动安装后的应用。
+- [x] 已验证安装后的 API Key Test、Start、Stop 和无残留进程。
+- [x] 卸载后安装目录和快捷方式已移除。
+- [x] 卸载保留 `settings.json` 和 Windows Credential Manager Key，用户文档已明确说明。
+- [x] 安装器未签名，README 已说明 SmartScreen 未知发布者提示。
 
 发布输出检查命令：
 
 ```powershell
-Get-ChildItem release\ScreenSubtitleTranslator-v0.1.0-win-x64 -Recurse |
+Get-ChildItem artifacts\release\ScreenSubtitleTranslator-v0.1.0-win-x64 -Recurse |
     Where-Object {
         $_.FullName -match 'artifacts|screenshots|diagnostic|TestResults|tests|tools'
     }
@@ -68,4 +76,4 @@ Get-ChildItem release\ScreenSubtitleTranslator-v0.1.0-win-x64 -Recurse |
 
 - [ ] 所有阻塞项完成。
 - [ ] 已知限制已写入 `RELEASE_NOTES.md`。
-- [ ] 可以进入 zip 打包阶段。
+- [x] 可以生成 zip 或安装器候选发布资产。

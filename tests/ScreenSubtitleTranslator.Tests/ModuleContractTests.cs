@@ -1,4 +1,5 @@
 using System.IO;
+using System.Windows.Threading;
 using ScreenSubtitleTranslator.AudioCapture;
 using ScreenSubtitleTranslator.Logging;
 using ScreenSubtitleTranslator.Overlay;
@@ -23,6 +24,10 @@ public sealed class ModuleContractTests
         Assert.True(typeof(ISubtitleOverlayController).IsInterface);
         Assert.True(typeof(ISubtitleOverlayController).IsAssignableFrom(typeof(WpfSubtitleOverlayController)));
         Assert.True(typeof(ISettingsStore).IsInterface);
+        Assert.True(typeof(IApiKeyStore).IsInterface);
+        Assert.True(typeof(IOpenAIApiKeyManager).IsInterface);
+        Assert.True(typeof(IOpenAIApiKeyValidationService).IsInterface);
+        Assert.True(typeof(IApiKeyConfigurationDialogService).IsInterface);
         Assert.True(typeof(IAppLogger).IsInterface);
     }
 
@@ -377,6 +382,129 @@ public sealed class ModuleContractTests
     }
 
     [Fact]
+    public async Task OpenAIApiKeyManagerSavesReadsAndClearsLocalKey()
+    {
+        var store = new InMemoryApiKeyStore();
+        var environment = new InMemoryEnvironmentVariableAccessor();
+        var manager = new OpenAIApiKeyManager(store, environment);
+
+        var saved = await manager.SaveLocalKeyAsync("local-test-api-key", CancellationToken.None);
+
+        Assert.Equal(OpenAIApiKeySource.WindowsCredentialManager, saved.Source);
+        Assert.Equal("local-test-api-key", store.StoredKey);
+        Assert.Equal(
+            "local-test-api-key",
+            environment.Get(OpenAIApiKeyManager.EnvironmentVariableName, EnvironmentVariableTarget.Process));
+
+        var resolved = await manager.GetStateAsync(CancellationToken.None);
+        Assert.True(resolved.HasKey);
+        Assert.Equal(OpenAIApiKeySource.WindowsCredentialManager, resolved.Source);
+
+        var cleared = await manager.ClearLocalKeyAsync(CancellationToken.None);
+
+        Assert.False(cleared.HasKey);
+        Assert.Null(store.StoredKey);
+        Assert.Null(environment.Get(
+            OpenAIApiKeyManager.EnvironmentVariableName,
+            EnvironmentVariableTarget.Process));
+    }
+
+    [Fact]
+    public async Task OpenAIApiKeyManagerPrefersEnvironmentVariableOverSavedKey()
+    {
+        var store = new InMemoryApiKeyStore { StoredKey = "saved-test-api-key" };
+        var environment = new InMemoryEnvironmentVariableAccessor();
+        var manager = new OpenAIApiKeyManager(store, environment);
+
+        var initial = await manager.GetStateAsync(CancellationToken.None);
+        Assert.Equal(OpenAIApiKeySource.WindowsCredentialManager, initial.Source);
+
+        environment.Set(
+            OpenAIApiKeyManager.EnvironmentVariableName,
+            "environment-test-api-key",
+            EnvironmentVariableTarget.User);
+
+        var resolved = await manager.GetStateAsync(CancellationToken.None);
+
+        Assert.Equal(OpenAIApiKeySource.EnvironmentVariable, resolved.Source);
+        Assert.Equal("environment-test-api-key", resolved.ApiKey);
+        Assert.Equal(
+            "environment-test-api-key",
+            environment.Get(OpenAIApiKeyManager.EnvironmentVariableName, EnvironmentVariableTarget.Process));
+    }
+
+    [Fact]
+    public async Task MainWindowStartIsBlockedAndConfigurationIsPromptedWithoutApiKey()
+    {
+        var manager = new OpenAIApiKeyManager(
+            new InMemoryApiKeyStore(),
+            new InMemoryEnvironmentVariableAccessor());
+        var dialog = new RecordingApiKeyConfigurationDialogService(result: false);
+        var pipeline = new SubtitlePipelineService(new NoOpSubtitleOverlayController());
+        var viewModel = new MainWindowViewModel(
+            pipeline,
+            new InMemorySettingsStore(),
+            manager,
+            dialog,
+            Dispatcher.CurrentDispatcher);
+
+        try
+        {
+            await viewModel.StartAsync();
+
+            Assert.Equal(1, dialog.ShowCount);
+            Assert.False(viewModel.IsRunning);
+            Assert.Equal("Error", viewModel.AppStatus);
+            Assert.Contains("Configure API Key", viewModel.ErrorMessage, StringComparison.Ordinal);
+        }
+        finally
+        {
+            await viewModel.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task MainWindowInitializationPromptsForFirstApiKeyConfiguration()
+    {
+        var manager = new OpenAIApiKeyManager(
+            new InMemoryApiKeyStore(),
+            new InMemoryEnvironmentVariableAccessor());
+        var dialog = new RecordingApiKeyConfigurationDialogService(result: false);
+        var viewModel = new MainWindowViewModel(
+            new SubtitlePipelineService(new NoOpSubtitleOverlayController()),
+            new InMemorySettingsStore(),
+            manager,
+            dialog,
+            Dispatcher.CurrentDispatcher);
+
+        try
+        {
+            await viewModel.InitializeAsync();
+
+            Assert.Equal(1, dialog.ShowCount);
+            Assert.False(viewModel.IsApiKeyConfigured);
+            Assert.Equal("API Key: Not configured", viewModel.ApiKeyStatus);
+        }
+        finally
+        {
+            await viewModel.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task ApiKeyValidationUsesLightweightAuthenticatedGetRequest()
+    {
+        var handler = new ApiKeyValidationHandler();
+        using var httpClient = new HttpClient(handler);
+        using var service = new OpenAIApiKeyValidationService(httpClient);
+
+        var result = await service.ValidateAsync("validation-test-api-key", CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    [Fact]
     public async Task OpenAITranslationServiceReportsMissingApiKeyBeforeNetworkCall()
     {
         using var service = new OpenAITranslationService(
@@ -722,6 +850,127 @@ public sealed class ModuleContractTests
             {
                 Content = new StringContent("""{"output_text":"retry succeeded"}""")
             };
+        }
+    }
+
+    private sealed class InMemoryApiKeyStore : IApiKeyStore
+    {
+        public string? StoredKey { get; set; }
+
+        public Task<string?> ReadAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(StoredKey);
+        }
+
+        public Task SaveAsync(string apiKey, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            StoredKey = apiKey;
+            return Task.CompletedTask;
+        }
+
+        public Task ClearAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            StoredKey = null;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class InMemoryEnvironmentVariableAccessor : IEnvironmentVariableAccessor
+    {
+        private readonly Dictionary<(string Name, EnvironmentVariableTarget Target), string> _values = new();
+
+        public string? Get(string name, EnvironmentVariableTarget target)
+        {
+            return _values.GetValueOrDefault((name, target));
+        }
+
+        public void SetProcess(string name, string? value)
+        {
+            Set(name, value, EnvironmentVariableTarget.Process);
+        }
+
+        public void Set(string name, string? value, EnvironmentVariableTarget target)
+        {
+            if (value is null)
+            {
+                _values.Remove((name, target));
+                return;
+            }
+
+            _values[(name, target)] = value;
+        }
+    }
+
+    private sealed class RecordingApiKeyConfigurationDialogService : IApiKeyConfigurationDialogService
+    {
+        private readonly bool _result;
+
+        public RecordingApiKeyConfigurationDialogService(bool result)
+        {
+            _result = result;
+        }
+
+        public int ShowCount { get; private set; }
+
+        public Task<bool> ShowAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ShowCount++;
+            return Task.FromResult(_result);
+        }
+    }
+
+    private sealed class InMemorySettingsStore : ISettingsStore
+    {
+        public Task<UserSettings> LoadAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(UserSettings.CreateDefault());
+        }
+
+        public Task SaveAsync(UserSettings settings, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class NoOpSubtitleOverlayController : ISubtitleOverlayController
+    {
+        public void Show()
+        {
+        }
+
+        public void Hide()
+        {
+        }
+
+        public void Update(SubtitleOverlayState state)
+        {
+        }
+    }
+
+    private sealed class ApiKeyValidationHandler : HttpMessageHandler
+    {
+        private int _requestCount;
+
+        public int RequestCount => Volatile.Read(ref _requestCount);
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref _requestCount);
+            Assert.Equal(HttpMethod.Get, request.Method);
+            Assert.Equal("https://api.openai.com/v1/models", request.RequestUri?.AbsoluteUri);
+            Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
+            Assert.Equal("validation-test-api-key", request.Headers.Authorization?.Parameter);
+
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
         }
     }
 }
